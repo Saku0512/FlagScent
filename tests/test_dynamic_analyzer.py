@@ -53,19 +53,21 @@ class TestDynamicAnalyzer:
         try:
             analyzer = DynamicAnalyzer(temp_path)
             
-            # Sample ltrace output
+            # Sample ltrace output (realistic format)
             ltrace_output = """
-strcmp("CTF{test_flag}", "input")
-strncmp("flag{another}", "input", 10)
-memcmp("data", "input", 4)
+strcmp("CTF{test_flag}", "input") = -1
+strncmp("flag{another}", "input", 10) = -1
+memcmp("data", "input", 4) = 1
+puts("CTF{found_flag}") = 13
+printf("flag: %s", "CTF{value}") = 15
 """
             
             candidates = analyzer._parse_ltrace_output(ltrace_output)
             
             # Should extract candidates
             assert isinstance(candidates, list)
-            # Should have found some candidates
-            assert len(candidates) > 0
+            # Should have found multiple candidates
+            assert len(candidates) >= 3
             
             # Check structure
             for candidate in candidates:
@@ -74,6 +76,12 @@ memcmp("data", "input", 4)
                 assert "method" in candidate
                 assert "source" in candidate
                 assert candidate["method"] == AnalysisMethod.DYNAMIC
+            
+            # Check that we extracted both arguments from strcmp
+            candidates_str = [c["candidate"] for c in candidates]
+            assert "CTF{test_flag}" in candidates_str
+            assert "input" in candidates_str
+            assert "CTF{found_flag}" in candidates_str
         
         finally:
             os.unlink(temp_path)
@@ -87,6 +95,82 @@ memcmp("data", "input", 4)
         try:
             analyzer = DynamicAnalyzer(temp_path)
             candidates = analyzer._parse_ltrace_output("")
+            assert candidates == []
+        finally:
+            os.unlink(temp_path)
+    
+    def test_parse_ltrace_output_no_duplicates(self):
+        """Test that parse_ltrace_output removes duplicates."""
+        with tempfile.NamedTemporaryFile(delete=False) as f:
+            f.write(b"dummy")
+            temp_path = f.name
+        
+        try:
+            analyzer = DynamicAnalyzer(temp_path)
+            
+            # Same string appears multiple times
+            ltrace_output = """
+strcmp("CTF{flag}", "input") = -1
+strcmp("CTF{flag}", "other") = -1
+puts("CTF{flag}") = 10
+"""
+            
+            candidates = analyzer._parse_ltrace_output(ltrace_output)
+            candidates_str = [c["candidate"] for c in candidates]
+            
+            # Should only appear once
+            assert candidates_str.count("CTF{flag}") == 1
+        
+        finally:
+            os.unlink(temp_path)
+    
+    def test_parse_strace_output(self):
+        """Test parsing strace output."""
+        with tempfile.NamedTemporaryFile(delete=False) as f:
+            f.write(b"dummy")
+            temp_path = f.name
+        
+        try:
+            analyzer = DynamicAnalyzer(temp_path)
+            
+            # Sample strace output
+            strace_output = """
+read(0, "CTF{input_flag}", 100) = 15
+write(1, "CTF{output_flag}", 16) = 16
+read(0, "test", 10) = 4
+"""
+            
+            candidates = analyzer._parse_strace_output(strace_output)
+            
+            # Should extract candidates
+            assert isinstance(candidates, list)
+            assert len(candidates) >= 2
+            
+            # Check structure
+            for candidate in candidates:
+                assert isinstance(candidate, dict)
+                assert "candidate" in candidate
+                assert "method" in candidate
+                assert "source" in candidate
+                assert candidate["method"] == AnalysisMethod.DYNAMIC
+            
+            # Check extracted strings
+            candidates_str = [c["candidate"] for c in candidates]
+            assert "CTF{input_flag}" in candidates_str
+            assert "CTF{output_flag}" in candidates_str
+        
+        finally:
+            os.unlink(temp_path)
+    
+    def test_parse_strace_output_empty(self):
+        """Test parsing empty strace output."""
+        with tempfile.NamedTemporaryFile(delete=False) as f:
+            f.write(b"dummy")
+            temp_path = f.name
+        
+        try:
+            analyzer = DynamicAnalyzer(temp_path)
+            candidates = analyzer._parse_strace_output("")
             assert candidates == []
         finally:
             os.unlink(temp_path)
@@ -108,6 +192,23 @@ memcmp("data", "input", 4)
         finally:
             os.unlink(temp_path)
     
+    def test_run_strace_handles_missing_tool(self):
+        """Test that run_strace handles missing tool gracefully."""
+        with tempfile.NamedTemporaryFile(delete=False) as f:
+            f.write(b"dummy")
+            temp_path = f.name
+        
+        try:
+            analyzer = DynamicAnalyzer(temp_path)
+            # Mock check to return False
+            analyzer._check_tool_available = lambda x: False
+            
+            candidates = analyzer.run_strace()
+            # Should return empty list, not raise exception
+            assert candidates == []
+        finally:
+            os.unlink(temp_path)
+    
     def test_analyze_returns_list(self):
         """Test analyze returns list of candidates."""
         with tempfile.NamedTemporaryFile(delete=False) as f:
@@ -124,4 +225,3 @@ memcmp("data", "input", 4)
             assert isinstance(results, list)
         finally:
             os.unlink(temp_path)
-
