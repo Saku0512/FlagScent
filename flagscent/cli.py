@@ -13,7 +13,7 @@ from flagscent.r2_analyzer import R2Analyzer
 
 def print_candidates(candidates, limit: int = 10):
     """
-    Print ranked candidates in human-readable format.
+    Print ranked candidates in human-readable format with explainability.
     
     Args:
         candidates: List of FlagCandidate objects
@@ -25,8 +25,17 @@ def print_candidates(candidates, limit: int = 10):
     
     for i, candidate in enumerate(candidates[:limit], 1):
         print(f"\n[{i}] score={candidate.score:.1f}  {candidate.candidate}")
-        print(f"    source: {candidate.source}")
-        print(f"    method: {candidate.method.value}")
+        print(f"    Method: {candidate.method.value}")
+        print(f"    Evidence:")
+        
+        # Parse source for better display
+        if "merged:" in candidate.source:
+            # Show merge evidence
+            parts = candidate.source.replace("merged: ", "").split(" + ")
+            for part in parts:
+                print(f"      - {part.strip()}")
+        else:
+            print(f"      - {candidate.source}")
     
     if len(candidates) > limit:
         print(f"\n... and {len(candidates) - limit} more candidates")

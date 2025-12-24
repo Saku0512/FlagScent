@@ -9,6 +9,7 @@ from flagscent.static_analyzer import StaticAnalyzer
 from flagscent.dynamic_analyzer import DynamicAnalyzer
 from flagscent.symbolic_analyzer import SymbolicAnalyzer
 from flagscent.scorer import score_candidate, rank_candidates
+from flagscent.merger import CandidateMerger
 
 
 class FlagScentAnalyzer:
@@ -57,7 +58,8 @@ class FlagScentAnalyzer:
             candidate = score_candidate(
                 result["candidate"],
                 result["method"],
-                result["source"]
+                result["source"],
+                all_candidates  # Pass existing candidates for consistency scoring
             )
             all_candidates.append(candidate)
         
@@ -69,7 +71,8 @@ class FlagScentAnalyzer:
                 candidate = score_candidate(
                     result["candidate"],
                     result["method"],
-                    result["source"]
+                    result["source"],
+                    all_candidates  # Pass existing candidates for consistency scoring
                 )
                 all_candidates.append(candidate)
         
@@ -81,8 +84,32 @@ class FlagScentAnalyzer:
                 seen.add(candidate.candidate)
                 unique_candidates.append(candidate)
         
+        # Re-score with consistency bonuses now that we have all candidates
+        rescored_candidates = []
+        for candidate in unique_candidates:
+            rescored = score_candidate(
+                candidate.candidate,
+                candidate.method,
+                candidate.source,
+                unique_candidates  # All candidates for consistency
+            )
+            rescored_candidates.append(rescored)
+        
+        # Merge candidates (prefix/suffix, common subsequences)
+        print("[*] Merging candidates...")
+        merger = CandidateMerger()
+        merged_candidates = merger.merge_all(rescored_candidates)
+        
+        # Remove duplicates again after merging
+        seen_merged = set()
+        final_candidates = []
+        for candidate in merged_candidates:
+            if candidate.candidate not in seen_merged:
+                seen_merged.add(candidate.candidate)
+                final_candidates.append(candidate)
+        
         # Rank candidates
-        ranked = rank_candidates(unique_candidates)
+        ranked = rank_candidates(final_candidates)
         
         return ranked
 
