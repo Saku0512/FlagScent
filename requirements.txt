@@ -1,0 +1,8 @@
+# Core dependencies
+r2pipe>=1.7.0
+angr>=9.2.0
+
+# Development dependencies
+pytest>=7.0.0
+pytest-cov>=4.0.0
+

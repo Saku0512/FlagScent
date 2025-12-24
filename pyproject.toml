@@ -1,0 +1,48 @@
+[build-system]
+requires = ["setuptools>=61.0", "wheel"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "flagscent"
+version = "0.1.0"
+description = "Automated flag candidate discovery for CTF reverse engineering"
+readme = "README.md"
+requires-python = ">=3.11"
+license = {text = "See LICENSE file"}
+authors = [
+    {name = "FlagScent Team"}
+]
+keywords = ["ctf", "reverse-engineering", "binary-analysis", "security"]
+classifiers = [
+    "Development Status :: 3 - Alpha",
+    "Intended Audience :: Security",
+    "Topic :: Security",
+    "Programming Language :: Python :: 3",
+    "Programming Language :: Python :: 3.11",
+    "Programming Language :: Python :: 3.12",
+]
+
+dependencies = [
+    "r2pipe>=1.7.0",
+    "angr>=9.2.0",
+]
+
+[project.optional-dependencies]
+dev = [
+    "pytest>=7.0.0",
+    "pytest-cov>=4.0.0",
+    "black>=23.0.0",
+    "flake8>=6.0.0",
+]
+
+[project.scripts]
+flagscent = "flagscent.cli:main"
+
+[project.urls]
+Homepage = "https://github.com/yourusername/FlagScent"
+Repository = "https://github.com/yourusername/FlagScent"
+
+[tool.setuptools.packages.find]
+where = ["."]
+include = ["flagscent*"]
+
