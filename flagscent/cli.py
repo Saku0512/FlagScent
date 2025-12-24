@@ -6,6 +6,7 @@ import argparse
 import json
 import sys
 from pathlib import Path
+from flagscent import __version__
 from flagscent.analyzer import FlagScentAnalyzer
 
 
@@ -64,8 +65,15 @@ Examples:
     )
     
     parser.add_argument(
+        "--version",
+        action="version",
+        version=f"FlagScent {__version__}"
+    )
+    
+    parser.add_argument(
         "binary",
         type=str,
+        nargs="?",
         help="Path to ELF binary to analyze"
     )
     
@@ -97,6 +105,10 @@ Examples:
     )
     
     args = parser.parse_args()
+    
+    # Check if binary is provided
+    if not args.binary:
+        parser.error("the following arguments are required: binary")
     
     # Validate binary path
     binary_path = Path(args.binary)
