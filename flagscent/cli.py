@@ -8,6 +8,7 @@ import sys
 from pathlib import Path
 from flagscent import __version__
 from flagscent.analyzer import FlagScentAnalyzer
+from flagscent.r2_analyzer import R2Analyzer
 
 
 def print_candidates(candidates, limit: int = 10):
@@ -58,9 +59,15 @@ def main():
         formatter_class=argparse.RawDescriptionHelpFormatter,
         epilog="""
 Examples:
+  # Flag candidate discovery
   flagscent binary                    # Analyze binary and show top candidates
   flagscent binary --json output.json # Output results as JSON
   flagscent binary --no-symbolic      # Skip symbolic execution
+  flagscent binary --limit 20         # Show top 20 candidates
+  
+  # Binary structure analysis
+  flagscent binary --analyze          # Show binary structure (functions, imports, etc.)
+  flagscent binary --disassemble main # Disassemble specific function
         """
     )
     
@@ -104,6 +111,19 @@ Examples:
         help="Maximum number of candidates to display (default: 10)"
     )
     
+    parser.add_argument(
+        "--analyze",
+        action="store_true",
+        help="Show binary structure analysis (functions, imports, etc.)"
+    )
+    
+    parser.add_argument(
+        "--disassemble",
+        type=str,
+        metavar="FUNCTION",
+        help="Disassemble a specific function (e.g., 'main')"
+    )
+    
     args = parser.parse_args()
     
     # Check if binary is provided
@@ -115,6 +135,43 @@ Examples:
     if not binary_path.exists():
         print(f"Error: Binary not found: {args.binary}", file=sys.stderr)
         sys.exit(1)
+    
+    # Handle structure analysis or disassembly requests
+    if args.analyze or args.disassemble:
+        try:
+            r2_analyzer = R2Analyzer(str(binary_path))
+            
+            if args.disassemble:
+                # Disassemble specific function
+                disasm = r2_analyzer.pdf(args.disassemble)
+                if disasm:
+                    print(f"\nDisassembly of function '{args.disassemble}':")
+                    print("=" * 60)
+                    print(disasm)
+                else:
+                    print(f"Error: Function '{args.disassemble}' not found or r2pipe not available", file=sys.stderr)
+                    sys.exit(1)
+            
+            if args.analyze:
+                # Show structure analysis
+                summary = r2_analyzer.print_summary()
+                print(summary)
+                
+                # Also show main function disassembly if available
+                structure = r2_analyzer.analyze_structure()
+                if structure.get('main_function'):
+                    main_name = structure['main_function'].get('name', 'main')
+                    print(f"\n\nDisassembly of '{main_name}':")
+                    print("=" * 60)
+                    disasm = r2_analyzer.pdf(main_name)
+                    if disasm:
+                        print(disasm)
+            
+            sys.exit(0)
+            
+        except Exception as e:
+            print(f"Error during analysis: {e}", file=sys.stderr)
+            sys.exit(1)
     
     # Create analyzer and run analysis
     try:

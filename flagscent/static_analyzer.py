@@ -88,6 +88,9 @@ class StaticAnalyzer:
             # Open binary in read-only mode
             r2 = r2pipe.open(self.binary_path, flags=['-2'])  # -2: disable analysis
             
+            # Run analysis first (equivalent to 'aaa' command)
+            r2.cmd('aaa')
+            
             # Extract strings using radare2
             # Use 'iz' command to extract strings from data sections
             # 'iz' shows strings in format: vaddr=0x... len=N string=...
@@ -187,6 +190,9 @@ class StaticAnalyzer:
             
             r2 = r2pipe.open(self.binary_path, flags=['-2'])
             
+            # Run analysis first (equivalent to 'aaa' command)
+            r2.cmd('aaa')
+            
             # Get imported functions using 'ii' command
             result = r2.cmd('ii')
             
@@ -218,9 +224,167 @@ class StaticAnalyzer:
         
         return functions
     
+    def get_function_list(self) -> List[dict]:
+        """
+        Get list of functions in binary using 'afl' command.
+        
+        Returns:
+            List of function dictionaries with name, address, size, etc.
+        """
+        functions = []
+        
+        if not self._check_r2pipe_available():
+            return functions
+        
+        try:
+            import r2pipe
+            import json
+            
+            r2 = r2pipe.open(self.binary_path, flags=['-2'])
+            
+            # Run analysis first (equivalent to 'aaa' command)
+            r2.cmd('aaa')
+            
+            # Use 'afl' to get function list
+            # Try JSON format first
+            result = r2.cmd('aflj')
+            
+            if result:
+                try:
+                    func_list = json.loads(result)
+                    if isinstance(func_list, list):
+                        for func in func_list:
+                            functions.append({
+                                'name': func.get('name', ''),
+                                'address': func.get('offset', 0),
+                                'size': func.get('size', 0),
+                                'calls': func.get('callrefs', 0),
+                                'xrefs': func.get('refs', 0),
+                            })
+                except (json.JSONDecodeError, TypeError):
+                    # Fallback to text format
+                    result_text = r2.cmd('afl')
+                    for line in result_text.split('\n'):
+                        if line.strip():
+                            # Parse: 0x...   N  function_name
+                            parts = line.split()
+                            if len(parts) >= 3:
+                                try:
+                                    addr = int(parts[0], 16)
+                                    size = int(parts[1])
+                                    name = parts[2]
+                                    functions.append({
+                                        'name': name,
+                                        'address': addr,
+                                        'size': size,
+                                    })
+                                except (ValueError, IndexError):
+                                    continue
+            
+            r2.quit()
+            
+        except Exception:
+            pass
+        
+        return functions
+    
+    def disassemble_function(self, function_name: str) -> str:
+        """
+        Disassemble a specific function using 'pdf @ function'.
+        
+        Args:
+            function_name: Name of function to disassemble
+        
+        Returns:
+            Disassembly output as string
+        """
+        if not self._check_r2pipe_available():
+            return ""
+        
+        try:
+            import r2pipe
+            
+            r2 = r2pipe.open(self.binary_path, flags=['-2'])
+            
+            # Run analysis first (equivalent to 'aaa' command)
+            r2.cmd('aaa')
+            
+            # Use 'pdf @ function' to disassemble
+            result = r2.cmd(f'pdf @ {function_name}')
+            
+            r2.quit()
+            
+            return result
+            
+        except Exception:
+            return ""
+    
+    def analyze_binary_structure(self) -> dict:
+        """
+        Analyze binary structure (functions, imports, strings, etc.).
+        
+        Returns:
+            Dictionary with analysis results
+        """
+        analysis = {
+            'functions': [],
+            'imports': [],
+            'main_function': None,
+            'entry_point': None,
+        }
+        
+        if not self._check_r2pipe_available():
+            return analysis
+        
+        try:
+            import r2pipe
+            import json
+            
+            r2 = r2pipe.open(self.binary_path, flags=['-2'])
+            
+            # Run analysis first (equivalent to 'aaa' command)
+            r2.cmd('aaa')
+            
+            # Get function list
+            analysis['functions'] = self.get_function_list()
+            
+            # Find main function
+            for func in analysis['functions']:
+                if func['name'] == 'main' or func['name'] == 'sym.main':
+                    analysis['main_function'] = func
+                    break
+            
+            # Get entry point
+            entry = r2.cmd('ie')
+            if entry:
+                try:
+                    entry_info = json.loads(entry)
+                    if isinstance(entry_info, list) and len(entry_info) > 0:
+                        analysis['entry_point'] = entry_info[0].get('vaddr', 0)
+                except (json.JSONDecodeError, TypeError):
+                    # Try text format
+                    for line in entry.split('\n'):
+                        if 'vaddr=' in line:
+                            try:
+                                addr_part = line.split('vaddr=')[1].split()[0]
+                                analysis['entry_point'] = int(addr_part, 16)
+                                break
+                            except (ValueError, IndexError):
+                                continue
+            
+            # Get imports
+            analysis['imports'] = self.identify_imported_functions()
+            
+            r2.quit()
+            
+        except Exception:
+            pass
+        
+        return analysis
+    
     def find_string_references(self, target_string: str) -> List[dict]:
         """
-        Find cross-references to a specific string.
+        Find cross-references to a specific string using r2.
         
         Args:
             target_string: String to search for
@@ -228,8 +392,66 @@ class StaticAnalyzer:
         Returns:
             List of reference locations (dict with address, function, etc.)
         """
-        # TODO: Implement using r2pipe
-        return []
+        references = []
+        
+        if not self._check_r2pipe_available():
+            return references
+        
+        try:
+            import r2pipe
+            import json
+            
+            r2 = r2pipe.open(self.binary_path, flags=['-2'])
+            
+            # Run analysis first (equivalent to 'aaa' command)
+            r2.cmd('aaa')
+            
+            # Search for string using '/ string'
+            # First, find the string address
+            search_result = r2.cmd(f'/ {target_string}')
+            
+            # Then find references to that string using 'axt'
+            # We need to find where the string is defined first
+            strings_result = r2.cmd('izzj')
+            
+            if strings_result:
+                try:
+                    strings_list = json.loads(strings_result)
+                    if isinstance(strings_list, list):
+                        for s in strings_list:
+                            if s.get('string', '') == target_string:
+                                addr = s.get('vaddr', 0)
+                                # Find cross-references
+                                xrefs = r2.cmd(f'axtj @ {addr}')
+                                if xrefs:
+                                    try:
+                                        xref_list = json.loads(xrefs)
+                                        if isinstance(xref_list, list):
+                                            for xref in xref_list:
+                                                references.append({
+                                                    'address': xref.get('addr', 0),
+                                                    'type': xref.get('type', ''),
+                                                    'opcode': xref.get('opcode', ''),
+                                                })
+                                    except (json.JSONDecodeError, TypeError):
+                                        # Fallback to text format
+                                        xrefs_text = r2.cmd(f'axt @ {addr}')
+                                        for line in xrefs_text.split('\n'):
+                                            if line.strip():
+                                                references.append({
+                                                    'address': line.strip(),
+                                                    'type': 'unknown',
+                                                })
+                                break
+                except (json.JSONDecodeError, TypeError):
+                    pass
+            
+            r2.quit()
+            
+        except Exception:
+            pass
+        
+        return references
     
     def analyze(self) -> List[dict]:
         """
